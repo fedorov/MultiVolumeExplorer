@@ -154,15 +154,24 @@ class qSlicerMultiVolumeExplorerModuleWidget:
 
     label = qt.QLabel("Use intensity range to fix axis extent")
     label.toolTip = "If checked, the extent of the vertical axis of the plot will be fixed to the range of the intensities in the input MultiVolume"
-    self.__fixedAxesCheckbox = qt.QCheckBox()
-    self.__fixedAxesCheckbox.toolTip = "If checked, the extent of the vertical axis of the plot will be fixed to the range of the intensities in the input MultiVolume"
-    self.__fixedAxesCheckbox.checked = False
+    self.__fixedAxisCheckbox = qt.QCheckBox()
+    self.__fixedAxisCheckbox.toolTip = "If checked, the extent of the vertical axis of the plot will be fixed to the range of the intensities in the input MultiVolume"
+    self.__fixedAxisCheckbox.checked = False
     plotFrameLayout.addWidget(label, 2, 0)
-    plotFrameLayout.addWidget(self.__fixedAxesCheckbox, 2,1,1,2)
+    plotFrameLayout.addWidget(self.__fixedAxisCheckbox, 2,1,1,1)
+
+    label1 = qt.QLabel("Use the average of the first")
+    self.__normalizeSpinbox = qt.QSpinBox()
+    self.__normalizeSpinbox.minimum = 0
+    label2 = qt.QLabel("frames to normalize the plot")
+    plotFrameLayout.addWidget(label1, 3,0)
+    plotFrameLayout.addWidget(self.__normalizeSpinbox, 3,1,1,1)
+    plotFrameLayout.addWidget(label1, 3,2,1,1)
+    self.__normalizeSpinbox.connect('valueChanged(int)', self.onNormalizeSpinboxChanged)
 
     # add chart container widget
     self.__chartView = ctk.ctkVTKChartView(w)
-    plotFrameLayout.addWidget(self.__chartView,3,0,1,3)
+    plotFrameLayout.addWidget(self.__chartView,4,0,1,3)
 
 
     self.__chart = self.__chartView.chart()
@@ -174,6 +183,9 @@ class qSlicerMultiVolumeExplorerModuleWidget:
     self.__yArray.SetName('signal intensity')
     self.__chartTable.AddColumn(self.__xArray)
     self.__chartTable.AddColumn(self.__yArray)
+
+  def onNormalizeSpinboxChanged(self,int):
+    pass
 
   def onLabelVolumeChanged(self):
     # iterate over the label image and collect the IJK for each label element
@@ -361,6 +373,8 @@ class qSlicerMultiVolumeExplorerModuleWidget:
         self.__mvRange[0] = min(self.__mvRange[0], frameRange[0])
         self.__mvRange[1] = max(self.__mvRange[1], frameRange[1])
 
+      self.__normalizeSpinbox.maximum = nFrames
+
     else:
       self.ctrlFrame.enabled = False
       self.plotFrame.enabled = False
@@ -477,11 +491,25 @@ class qSlicerMultiVolumeExplorerModuleWidget:
               else:
                 break
 
+            if self.__normalizeSpinbox.value != 0:
+              nNormFrames = self.__normalizeSpinbox.value
+              mean = 0.
+              for c in range(nNormFrames):
+                mean = mean+self.__yArray.GetValue(c)
+              mean = mean/nNormFrames
+              for c in range(nComponents):
+                self.__chartTable.SetValue(c,1,self.__yArray.GetValue(c)/mean)
+
             self.__chart.RemovePlot(0)
             self.__chart.RemovePlot(0)
-            self.__chart.GetAxis(0).SetTitle('signal intensity')
+
+            if self.__normalizeSpinbox.value != 0:
+              self.__chart.GetAxis(0).SetTitle('relative signal intensity')
+            else:
+              self.__chart.GetAxis(0).SetTitle('signal intensity')
+
             self.__chart.GetAxis(1).SetTitle(self.__mvNode.GetLabelName())
-            if self.__fixedAxesCheckbox.checked == True:
+            if self.__fixedAxisCheckbox.checked == True:
               self.__chart.GetAxis(0).SetBehavior(vtk.vtkAxis.FIXED)
               self.__chart.GetAxis(0).SetRange(self.__mvRange[0],self.__mvRange[1])
             else:
