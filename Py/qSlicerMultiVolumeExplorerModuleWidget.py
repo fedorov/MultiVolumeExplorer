@@ -1,17 +1,23 @@
 from __main__ import vtk, ctk, slicer
 import logging
-from qt import QVBoxLayout, QHBoxLayout, QGridLayout, QFormLayout, QSizePolicy, QDialog
+import PythonQt
+from qt import QVBoxLayout, QHBoxLayout, QGridLayout, QFormLayout, QSizePolicy, QDialog, QSize, QPoint
 from qt import QWidget, QLabel, QPushButton, QCheckBox, QRadioButton, QSpinBox, QTimer, QButtonGroup, QGroupBox
-from slicer.ScriptedLoadableModule import *
 from qSlicerMultiVolumeExplorerModuleHelper import qSlicerMultiVolumeExplorerModuleHelper as Helper
 from qSlicerMultiVolumeExplorerCharts import LabeledImageChartView, MultiVolumeIntensityChartView
 
 
-class qSlicerMultiVolumeExplorerSimplifiedModuleWidget(ScriptedLoadableModuleWidget):
+class qSlicerMultiVolumeExplorerSimplifiedModuleWidget:
 
   def __init__(self, parent=None):
-    logging.info("qSlicerMultiVolumeExplorerSimplifiedModuleWidget:init() called")
-    ScriptedLoadableModuleWidget.__init__(self, parent)
+    logging.debug("qSlicerMultiVolumeExplorerSimplifiedModuleWidget:init() called")
+    if not parent or not hasattr(parent, "layout"):
+      self.parent = slicer.qMRMLWidget()
+      self.parent.setLayout(QVBoxLayout())
+    else:
+      self.parent = parent
+
+    self.layout = self.parent.layout()
 
     self._bgMultiVolumeNode = None
     self._fgMultiVolumeNode = None
@@ -19,18 +25,28 @@ class qSlicerMultiVolumeExplorerSimplifiedModuleWidget(ScriptedLoadableModuleWid
     self.styleObserverTags = []
     self.sliceWidgetsPerStyle = {}
 
-  def setup(self):
+    self.chartPopupWindow = None
+    self.chartPopupSize = QSize(600, 300)
+    self.chartPopupPosition = QPoint(0,0)
 
-    w = QWidget()
+  def hide(self):
+    self.widget.hide()
+
+  def show(self):
+    self.widget.show()
+
+  def setup(self):
+    self.widget = QWidget()
     layout = QGridLayout()
-    w.setLayout(layout)
-    self.layout.addWidget(w)
-    w.show()
+    self.widget.setLayout(layout)
+    self.layout.addWidget(self.widget)
+    self.widget.show()
     self.layout = layout
 
     self.setupInputFrame()
-    self.setupPlottingFrame()
+    self.setupFrameControlFrame()
     self.setupAdditionalFrames()
+    self.setupPlottingFrame()
 
     self.setFramesEnabled(False)
 
@@ -46,42 +62,48 @@ class qSlicerMultiVolumeExplorerSimplifiedModuleWidget(ScriptedLoadableModuleWid
     self.sliceWidgetsPerStyle = {}
     self.refreshObservers()
 
-  def setupInputFrame(self):
+  def setupInputFrame(self, parent=None):
+    if not parent:
+      parent = self.layout
     self.bgMultiVolumeSelector = slicer.qMRMLNodeComboBox()
     self.bgMultiVolumeSelector.nodeTypes = ['vtkMRMLMultiVolumeNode']
     self.bgMultiVolumeSelector.setMRMLScene(slicer.mrmlScene)
     self.bgMultiVolumeSelector.addEnabled = 0
     self._bgMultiVolumeSelectorLabel = QLabel('Input multivolume')
-    widget = QWidget()
-    hbox = QHBoxLayout()
-    widget.setLayout(hbox)
-    hbox.addWidget(self._bgMultiVolumeSelectorLabel)
-    hbox.addWidget(self.bgMultiVolumeSelector)
-    self.layout.addWidget(widget)
-    self.setupFrameControlFrame()
+    inputFrameWidget = QWidget()
+    self.inputFrameLayout = QFormLayout()
+    inputFrameWidget.setLayout(self.inputFrameLayout)
+    self.inputFrameLayout.addRow(self._bgMultiVolumeSelectorLabel, self.bgMultiVolumeSelector)
+    parent.addWidget(inputFrameWidget)
 
   def setupFrameControlFrame(self):
     # TODO: initialize the slider based on the contents of the labels array
-    # slider to scroll over metadata stored in the vector container being explored
     self.frameSlider = ctk.ctkSliderWidget()
     self.frameLabel = QLabel('Current frame number')
     self.playButton = QPushButton('Play')
     self.playButton.toolTip = 'Iterate over multivolume frames'
     self.playButton.checkable = True
-    self.frameControlWidget = QWidget()
     frameControlHBox = QHBoxLayout()
-    self.frameControlWidget.setLayout(frameControlHBox)
     frameControlHBox.addWidget(self.frameLabel)
     frameControlHBox.addWidget(self.frameSlider)
     frameControlHBox.addWidget(self.playButton)
-    self.layout.addWidget(self.frameControlWidget)
+    self.inputFrameLayout.addRow(frameControlHBox)
 
   def setupAdditionalFrames(self):
     pass
 
-  def setupPlottingFrame(self):
+  def setupPlottingFrame(self, parent=None):
+    if not parent:
+      parent = self.layout
+    self.plottingFrameWidget = QWidget()
+    self.plottingFrameLayout = QGridLayout()
+    self.plottingFrameWidget.setLayout(self.plottingFrameLayout)
     self._multiVolumeIntensityChart = MultiVolumeIntensityChartView()
-    self.layout.addWidget(self._multiVolumeIntensityChart.chartView)
+    self.popupChartButton = QPushButton("Undock chart")
+    self.popupChartButton.setCheckable(True)
+    self.plottingFrameLayout.addWidget(self._multiVolumeIntensityChart.chartView)
+    self.plottingFrameLayout.addWidget(self.popupChartButton)
+    parent.addWidget(self.plottingFrameWidget)
 
   def setupConnections(self):
     self.parent.connect('mrmlSceneChanged(vtkMRMLScene*)', self.onVCMRMLSceneChanged)
@@ -89,6 +111,34 @@ class qSlicerMultiVolumeExplorerSimplifiedModuleWidget(ScriptedLoadableModuleWid
     self.playButton.connect('toggled(bool)', self.onPlayButtonToggled)
     self.frameSlider.connect('valueChanged(double)', self.onSliderChanged)
     self.timer.connect('timeout()', self.goToNext)
+    self.popupChartButton.connect('toggled(bool)', self.onDockChartViewToggled)
+
+  def onDockChartViewToggled(self, checked):
+    if checked:
+      self.chartPopupWindow = QDialog()
+      self.chartPopupWindow.setWindowFlags(PythonQt.QtCore.Qt.WindowStaysOnTopHint)
+      layout = QGridLayout()
+      self.chartPopupWindow.setLayout(layout)
+      layout.addWidget(self._multiVolumeIntensityChart.chartView)
+      layout.addWidget(self.popupChartButton)
+      self.chartPopupWindow.finished.connect(self.dockChartView)
+      self.chartPopupWindow.resize(self.chartPopupSize)
+      self.chartPopupWindow.move(self.chartPopupPosition)
+      self.chartPopupWindow.show()
+      self.popupChartButton.setText("Dock chart")
+      self._multiVolumeIntensityChart.chartView.show()
+    else:
+      self.chartPopupWindow.close()
+
+  def dockChartView(self):
+    self.chartPopupSize = self.chartPopupWindow.size
+    self.chartPopupPosition = self.chartPopupWindow.pos
+    self.plottingFrameLayout.addWidget(self._multiVolumeIntensityChart.chartView)
+    self.plottingFrameLayout.addWidget(self.popupChartButton)
+    self.popupChartButton.setText("Undock chart")
+    self.popupChartButton.disconnect('toggled(bool)', self.onDockChartViewToggled)
+    self.popupChartButton.checked = False
+    self.popupChartButton.connect('toggled(bool)', self.onDockChartViewToggled)
 
   def onSliderChanged(self, newValue):
     if self._bgMultiVolumeNode is None:
@@ -97,7 +147,7 @@ class qSlicerMultiVolumeExplorerSimplifiedModuleWidget(ScriptedLoadableModuleWid
     self.setCurrentFrameNumber(newValue)
 
   def onVCMRMLSceneChanged(self, mrmlScene):
-    logging.info("qSlicerMultiVolumeExplorerSimplifiedModuleWidget:onVCMRMLSceneChanged")
+    logging.debug("qSlicerMultiVolumeExplorerSimplifiedModuleWidget:onVCMRMLSceneChanged")
     self.bgMultiVolumeSelector.setMRMLScene(slicer.mrmlScene)
     self.onBackgroundInputChanged()
 
@@ -211,18 +261,13 @@ class qSlicerMultiVolumeExplorerModuleWidget(qSlicerMultiVolumeExplorerSimplifie
   def setupAdditionalFrames(self):
     self.setupPlotSettingsFrame()
 
-  def setupInputFrame(self):
+  def setupInputFrame(self, parent=None):
     self.inputFrame = ctk.ctkCollapsibleButton()
     self.inputFrame.text = "Input"
     self.inputFrame.collapsed = 0
-    self.inputFrameLayout = QFormLayout(self.inputFrame)
+    inputFrameCollapsibleLayout = QFormLayout(self.inputFrame)
+    qSlicerMultiVolumeExplorerSimplifiedModuleWidget.setupInputFrame(self, parent=inputFrameCollapsibleLayout)
     self.layout.addWidget(self.inputFrame)
-
-    self.bgMultiVolumeSelector = slicer.qMRMLNodeComboBox()
-    self.bgMultiVolumeSelector.nodeTypes = ['vtkMRMLMultiVolumeNode']
-    self.bgMultiVolumeSelector.setMRMLScene(slicer.mrmlScene)
-    self.bgMultiVolumeSelector.addEnabled = 0
-    self.inputFrameLayout.addRow(QLabel('Input multivolume'), self.bgMultiVolumeSelector)
 
     self._fgMultiVolumeSelector = slicer.qMRMLNodeComboBox()
     self._fgMultiVolumeSelector.nodeTypes = ['vtkMRMLMultiVolumeNode']
@@ -233,20 +278,9 @@ class qSlicerMultiVolumeExplorerModuleWidget(qSlicerMultiVolumeExplorerSimplifie
       plot in interactive charting. As an example, this can be used to overlay the \
       curve obtained by fitting a model to the data"
     self.inputFrameLayout.addRow(QLabel('Input secondary multivolume'), self._fgMultiVolumeSelector)
-    self.setupFrameControlFrame()
 
   def setupFrameControlFrame(self):
-    # TODO: initialize the slider based on the contents of the labels array
-    # slider to scroll over metadata stored in the vector container being explored
-    self.frameSlider = ctk.ctkSliderWidget()
-    self.playButton = QPushButton('Play')
-    self.playButton.toolTip = 'Iterate over multivolume frames'
-    self.playButton.checkable = True
-    hbox = QHBoxLayout()
-    hbox.addWidget(QLabel('Current frame number'))
-    hbox.addWidget(self.frameSlider)
-    hbox.addWidget(self.playButton)
-    self.inputFrameLayout.addRow(hbox)
+    qSlicerMultiVolumeExplorerSimplifiedModuleWidget.setupFrameControlFrame(self)
 
     self._frameCopySelector = slicer.qMRMLNodeComboBox()
     self._frameCopySelector.nodeTypes = ['vtkMRMLScalarVolumeNode']
@@ -255,8 +289,8 @@ class qSlicerMultiVolumeExplorerModuleWidget(qSlicerMultiVolumeExplorerSimplifie
     self._frameCopySelector.enabled = 0
     # do not show "children" of vtkMRMLScalarVolumeNode
     self._frameCopySelector.hideChildNodeTypes = ["vtkMRMLDiffusionWeightedVolumeNode",
-                                            "vtkMRMLDiffusionTensorVolumeNode",
-                                            "vtkMRMLVectorVolumeNode"]
+                                                  "vtkMRMLDiffusionTensorVolumeNode",
+                                                  "vtkMRMLVectorVolumeNode"]
     self.extractFrame = False
     self.extractFrameCheckBox = QCheckBox('Enable copying')
     hbox = QHBoxLayout()
@@ -332,15 +366,24 @@ class qSlicerMultiVolumeExplorerModuleWidget(qSlicerMultiVolumeExplorerSimplifie
     hbox.addWidget(self.nFramesBaselineCalculation)
     plotSettingsFrameLayout.addRow(hbox)
 
-  def setupPlottingFrame(self):
+  def setupPlottingFrame(self, parent=None):
     self.plotFrame = ctk.ctkCollapsibleButton()
     self.plotFrame.text = "Plotting"
     self.plotFrame.collapsed = 0
     plotFrameLayout = QGridLayout(self.plotFrame)
     self.layout.addWidget(self.plotFrame)
+    qSlicerMultiVolumeExplorerSimplifiedModuleWidget.setupPlottingFrame(self, parent=plotFrameLayout)
 
-    self._multiVolumeIntensityChart = MultiVolumeIntensityChartView()
-    plotFrameLayout.addWidget(self._multiVolumeIntensityChart.chartView, 0, 0)
+  def onDockChartViewToggled(self, checked):
+    qSlicerMultiVolumeExplorerSimplifiedModuleWidget.onDockChartViewToggled(self, checked)
+    if checked:
+      self.layout.removeWidget(self.plotFrame)
+      self.plotFrame.hide()
+
+  def dockChartView(self):
+    qSlicerMultiVolumeExplorerSimplifiedModuleWidget.dockChartView(self)
+    self.layout.addWidget(self.plotFrame)
+    self.plotFrame.show()
 
   def setFramesEnabled(self, enabled):
     qSlicerMultiVolumeExplorerSimplifiedModuleWidget.setFramesEnabled(self, enabled)
