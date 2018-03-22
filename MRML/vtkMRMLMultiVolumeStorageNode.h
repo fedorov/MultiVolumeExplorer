@@ -21,6 +21,7 @@
 // MultiVolumeExplorer includes
 #include <vtkSlicerMultiVolumeExplorerModuleMRMLExport.h>
 
+#include "vtkMRMLMultiVolumeNode.h"
 #include "vtkMRMLNRRDStorageNode.h"
 
 /// \ingroup Slicer_QtModules_MultiVolumeNode
@@ -40,6 +41,9 @@ class VTK_SLICER_MULTIVOLUMEEXPLORER_MODULE_MRML_EXPORT vtkMRMLMultiVolumeStorag
   /// Return true if the node can be read in.
   virtual bool CanReadInReferenceNode(vtkMRMLNode *refNode) VTK_OVERRIDE;
 
+  /// Add nii as extra supported extension
+  virtual void InitializeSupportedReadFileTypes() VTK_OVERRIDE;
+
 protected:
   vtkMRMLMultiVolumeStorageNode();
   ~vtkMRMLMultiVolumeStorageNode();
@@ -52,6 +56,10 @@ protected:
   /// but it has an early exit if the file to be read is not a
   /// MultiVolume, e.g. the file is a NRRD but not a MultiVolume NRRD.
   virtual int ReadDataInternal(vtkMRMLNode* refNode) VTK_OVERRIDE;
+
+  /// Utilities for specific data formats
+  virtual int ReadDataInternalNRRD(vtkMRMLNode* refNode, vtkMRMLMultiVolumeNode *volNode, std::string fullName);
+  virtual int ReadDataInternalNII(vtkMRMLNode* refNode, vtkMRMLMultiVolumeNode *volNode, std::string fullName);
 };
 
 #endif
