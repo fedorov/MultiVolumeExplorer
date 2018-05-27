@@ -464,13 +464,15 @@ class qSlicerMultiVolumeExplorerModuleWidget(qSlicerMultiVolumeExplorerSimplifie
   def onSliderChanged(self, frameId):
     qSlicerMultiVolumeExplorerSimplifiedModuleWidget.onSliderChanged(self, frameId)
     frameId = int(frameId)
+
     if self.extractFrameCopy:
-      frameVolume = self.frameCopySelector.currentNode()
-      frameVolumeCopy = Helper.extractFrame(frameVolume, self._bgMultiVolumeNode, frameId)
-      if not frameVolume:
-        self.frameCopySelector.setCurrentNode(frameVolumeCopy)
       frameName = '%s frame %d' % (self._bgMultiVolumeNode.GetName(), frameId)
-      frameVolumeCopy.SetName(frameName)
+      nodeVolume = slicer.mrmlScene.GetNodesByName(frameName).GetNumberOfItems()
+      if (nodeVolume == 0):
+        frameVolume = self.frameCopySelector.addNode()
+        frameVolumeCopy = Helper.extractFrame(frameVolume, self._bgMultiVolumeNode, frameId)
+        frameVolumeCopy.SetName(frameName)
+        self.frameCopySelector.setCurrentNode(frameVolumeCopy)
 
   def onLabeledChartRequested(self):
     labelNode = self.labelMapSelector.currentNode()
